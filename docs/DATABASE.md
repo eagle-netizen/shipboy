@@ -5,7 +5,7 @@
 
 **Status:** Logical data model for design. **No SQL migrations in this document.** Field lists are indicative; exact types finalized at migration time.
 
-**Stack assumption:** PostgreSQL ([Architecture](./ARCHITECTURE.md) — Proposed).
+**Stack assumption:** PostgreSQL + **Prisma** ([Architecture](./ARCHITECTURE.md) — **Confirmed**). Tenant isolation for MVP is **application-level**; **PostgreSQL RLS is deferred**.
 
 ---
 
@@ -102,7 +102,7 @@ Separate from organization memberships so employees are not “members of every 
 | **Purpose** | Separate staff membership linking a `users` row to platform staff status/roles |
 | **Important fields** | `id`, `user_id`, `status`, `created_at`, … |
 | **Constraints** | Staff access requires active staff membership + role permissions |
-| **Security** | Privileged actions require MFA/step-up; **MFA implementation details Decision required** |
+| **Security** | Privileged actions require MFA/step-up: staff **TOTP** + **backend-enforced step-up** ([Security](./SECURITY.md) — **Confirmed**) |
 
 #### `platform_roles` / role assignments
 
@@ -114,9 +114,11 @@ Separate from organization memberships so employees are not “members of every 
 
 **Confirmed principle:** No staff permission ⇒ no customer-data access. Sensitive/privileged reads audited per BR-A3 (not ordinary list/detail reads).
 
-### 2.6 Session / auth artifacts (Proposed)
+### 2.6 Session / auth artifacts (Confirmed)
 
-Session store or token tables as required by chosen auth library—single identity works for all portals. May store `last_portal` / `active_organization_id` as UX hints only.
+**Better Auth** with **PostgreSQL-backed sessions** (tables per Better Auth / Prisma schema). Single identity works for all portals. May store `last_portal` / `active_organization_id` as UX hints only—never sole authorization input.
+
+Staff MFA factors (e.g. TOTP secrets) are stored per Better Auth / platform staff security model; step-up is enforced by the backend on privileged operations ([Security](./SECURITY.md)).
 ---
 
 ## 3. ParcelOS — catalog
@@ -504,14 +506,18 @@ Portals (Customer, Forwarder, Ops, Admin) are **not** tables.
 | Product vs SKU table split | Decision required |
 | Packages table in MVP | Decision required |
 | Money storage type | Decision required |
-| **PostgreSQL RLS** | **Decision required** |
 | Shipment↔Order cardinality | Proposed: 1 order per shipment in MVP |
-| ORM choice | **Decision required** (technical architecture phase) |
+| PostgreSQL RLS | **Deferred** (post-MVP defense-in-depth; not MVP) |
 
-### Founder-confirmed (cumulative)
+### Confirmed (Astra / founder cumulative)
 
 | Topic | Decision |
 |-------|----------|
+| Database | Managed PostgreSQL |
+| ORM / migrations | Prisma + Prisma Migrate |
+| Tenant isolation (MVP) | Application-level predicates + constraints/indexes + IDOR tests; **RLS deferred** |
+| Auth sessions | Better Auth; sessions in PostgreSQL |
+| Staff MFA/step-up | Staff TOTP; backend-enforced step-up |
 | Organization type | `exporter`, `forwarder`, `both` |
 | Org roles | `owner`, `admin`, `ops`, `viewer` |
 | Platform staff roles | `platform_admin`, `platform_ops`, `platform_support` |
@@ -519,6 +525,8 @@ Portals (Customer, Forwarder, Ops, Admin) are **not** tables.
 | Platform staff | Separate staff membership model |
 | Cross-org documents | `resource_access_grants`; default deny |
 | RFQ discovery | Eligible marketplace with controlled eligibility |
-| Billing fields | May exist as future hooks; billing product deferred from MVP |---
+| Billing fields | May exist as future hooks; billing product deferred from MVP |
+
+---
 
 *When migrations are authored, they must match Confirmed business rules—especially RFQ claim constraints and tenant columns.*

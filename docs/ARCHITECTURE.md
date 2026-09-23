@@ -3,7 +3,7 @@
 **Owner:** CLICKBITS Technologies Pvt. Ltd.  
 **Related docs:** [Product](./PRODUCT.md) · [PRD](./PRD.md) · [Business Rules](./BUSINESS_RULES.md) · [Database](./DATABASE.md) · [Security](./SECURITY.md)
 
-**Status:** Initial architecture proposal for ParcelOS-first implementation. Stack choices below are **Proposed** until founder approval.
+**Status:** ParcelOS-first architecture. Core application/runtime stack choices below are **Confirmed** (Astra). Remaining open items stay marked **Decision required** / **Proposed**.
 
 ---
 
@@ -12,7 +12,7 @@
 - Ship **ParcelOS** first with clean boundaries for **FreightOS** and **DocsOS**.
 - Prefer a **modular monolith** over microservices initially.
 - Deliver a **multi-portal** frontend architecture (Customer, Forwarder, Employee/Ops, Admin)—not one generic dashboard ([Product](./PRODUCT.md)).
-- Share **one backend / domain module set** across portals; enforce authz server-side.
+- Share **one backend / domain module set** across portaviewls; enforce authz server-side.
 - Enforce **strict tenant isolation** by default, plus **explicit authorized cross-organization** paths for FreightOS ([Business Rules](./BUSINESS_RULES.md)).
 - Isolate **carrier** and **marketplace** integrations behind adapters.
 - Avoid premature infrastructure; keep local development simple.
@@ -91,31 +91,31 @@ Portals are **not** domain modules. They are presentation/auth-context shells th
 - ParcelOS must not call FreightOS internals (and vice versa) except via explicit shared kernel types if needed.
 - No business rule duplication in the frontend; UI calls API.
 - Portal layouts may share design-system components but must not share “god” pages that mix admin + customer workflows.
-## 4. Recommended technology stack (Proposed)
+## 4. Recommended technology stack
 
-| Layer | Proposal | Why |
-|-------|----------|-----|
-| **Frontend** | TypeScript + Next.js (App Router) | Strong TS ecosystem, good auth/session patterns, SSR optional for marketing/app shell, one language with backend if Node chosen |
-| **UI kit** | Decision required (e.g. Radix + Tailwind) | Speed vs design system investment |
-| **Backend** | TypeScript + NestJS **or** Node/Fastify with modular folders | NestJS gives clear modules/DI fitting modular monolith; Fastify is lighter. **Decision required** between NestJS vs Fastify |
-| **API style** | REST JSON (OpenAPI) first | Simplicity for MVP; GraphQL **Future consideration** |
-| **DB** | PostgreSQL | Relational integrity for tenancy, uniqueness, RFQ claim constraints, audit |
-| **ORM / query** | Prisma **or** Drizzle | Prisma = velocity; Drizzle = SQL-friendly. **Decision required** |
-| **Migrations** | ORM migrations or Flyway/Liquibase-style—must be mandatory | Aligns with AGENTS.md |
-| **Auth** | Session cookies (web) + optional bearer tokens for API | See [Security](./SECURITY.md). Prefer battle-tested library (e.g. Auth.js / Lucia / custom on Passport)—**Decision required** |
-| **Password hashing** | Argon2id (or bcrypt if constrained) | Modern default |
-| **Jobs/queue** | PostgreSQL-backed jobs (e.g. Graphile Worker / BullMQ + Redis) | Start with PG-backed if avoiding Redis; Redis+BullMQ if needed. **Proposed:** PG-backed jobs for MVP to reduce moving parts |
-| **Object storage** | S3-compatible (AWS S3 or Cloudflare R2) | Labels, documents, invoice PDFs |
-| **Email** | Transactional provider (SES/Resend/Postmark)—**Decision required** | Notifications |
-| **Observability** | Structured JSON logs + OpenTelemetry (phased) + error tracker (Sentry or similar)—**Decision required** vendor | Debuggability |
-| **Hosting** | Single region container (Fly.io / Railway / AWS ECS / Render)—**Decision required** | Match team ops comfort |
-| **CI** | GitHub Actions | Already on GitHub |
+| Layer | Choice | Status | Why |
+|-------|--------|--------|-----|
+| **Frontend** | TypeScript + Next.js (App Router) | Proposed | Strong TS ecosystem, good auth/session patterns, SSR optional for marketing/app shell, one language with backend |
+| **UI kit** | Decision required (e.g. Radix + Tailwind) | Decision required | Speed vs design system investment |
+| **Backend** | TypeScript + **NestJS + Fastify** | **Confirmed** | NestJS modules/DI fit the modular monolith; Fastify as the HTTP adapter for performance and Nest ecosystem support |
+| **API style** | REST JSON (OpenAPI) first | Proposed | Simplicity for MVP; GraphQL **Future consideration** |
+| **DB** | PostgreSQL (managed) | **Confirmed** | Relational integrity for tenancy, uniqueness, RFQ claim constraints, audit |
+| **ORM / query** | **Prisma** | **Confirmed** | Velocity for MVP schema + typed client; migrations via Prisma Migrate |
+| **Migrations** | Prisma Migrate (mandatory) | **Confirmed** | Aligns with AGENTS.md |
+| **Auth** | **Better Auth** + cookie sessions stored in **PostgreSQL**; staff **TOTP** + **backend-enforced step-up** | **Confirmed** | See [Security](./SECURITY.md). Optional bearer tokens for API remain **Future consideration** |
+| **Password hashing** | Argon2id (or bcrypt if constrained) | Proposed | Modern default (library default as applicable) |
+| **Jobs/queue** | PostgreSQL-backed jobs (e.g. Graphile Worker / BullMQ + Redis) | Proposed | PG-backed jobs for MVP to reduce moving parts; Redis+BullMQ if needed later |
+| **Object storage** | **Private S3** (S3-compatible) | **Confirmed** | Labels, documents, invoice PDFs; private buckets only |
+| **Email** | Transactional provider (SES/Resend/Postmark)—**Decision required** | Decision required | Notifications |
+| **Observability** | Structured JSON logs + OpenTelemetry (phased) + error tracker (Sentry or similar)—**Decision required** vendor | Decision required | Debuggability |
+| **Hosting** | **Render** + managed PostgreSQL + private S3 | **Confirmed** | Single-region MVP ops fit for a small team |
+| **CI** | GitHub Actions | Proposed | Already on GitHub |
 
 ### Language rationale
 
 TypeScript end-to-end reduces context switching for a small team building adapter-heavy integrations and a rich ops UI.
 
-**Alternative considered:** Python (Django/FastAPI) — excellent for backends, weaker default pairing with a modern TS React app unless split stacks are acceptable. **Decision required** if founder prefers Python.
+**Alternatives considered (not selected for MVP):** Fastify-only modular folders without NestJS; Drizzle; Python (Django/FastAPI).
 
 ## 5. Multi-portal frontend architecture (Confirmed direction; details as noted)
 
@@ -169,21 +169,22 @@ Exact prefix strings may be adjusted; **path-prefix approach** is confirmed. Sub
 2. Add **Employee / Ops Portal** later.
 3. Add **Forwarder Portal** when FreightOS implementation starts—without redesigning domain modules.
 
-## 6. Backend architecture (Proposed)
+## 6. Backend architecture (Confirmed runtime; details as noted)
 
-- Modular monolith process exposing versioned REST (`/api/v1/...`).
+- **NestJS + Fastify** modular monolith process exposing versioned REST (`/api/v1/...`).
 - Separate **worker process** sharing the same codebase for jobs (imports, tracking poll, webhook post-processing).
-- Request pipeline: **authn → resolve user → resolve org context and/or platform-staff context → authz (permissions + resource rules) → validation → domain service → adapters**.
+- Persistence via **Prisma** against managed PostgreSQL.
+- Request pipeline: **authn (Better Auth) → resolve user → resolve org context and/or platform-staff context → authz (permissions + resource rules; staff step-up when required) → validation → domain service → adapters**.
 - Optional `X-Portal` / path metadata for telemetry only—**must not** replace authz (**Proposed**).
 - Carrier/marketplace HTTP clients isolated in adapter packages/folders.
 - Feature flags (**Proposed**) to disable FreightOS / portal route modules until launch.
 - Same domain endpoints may be called from multiple portals; authorization differs by caller privileges.
 ## 7. Database
 
-- Single PostgreSQL database for MVP.
+- Single **managed PostgreSQL** database for MVP (hosted with **Render**).
+- ORM: **Prisma**; all schema changes via **Prisma Migrate**. No direct production mutation.
 - Logical separation by schemas **optional** (`platform`, `parcel`, `freight`, `docs`)—**Proposed** for clarity, not required day one.
-- Tenant isolation enforced in application queries **and** supported by indexes/constraints; **PostgreSQL RLS** is **Decision required** for the technical architecture phase ([Database](./DATABASE.md), [Security](./SECURITY.md)).
-- All schema changes via migrations. No direct production mutation.
+- **Tenant isolation for MVP:** enforced at the **application layer** (tenant predicates on every tenant-owned query, indexes/constraints, automated IDOR tests). **PostgreSQL RLS is deferred** (not MVP)—revisit as defense-in-depth later ([Database](./DATABASE.md), [Security](./SECURITY.md)).
 
 ## 8. Authentication and authorization boundaries
 
@@ -191,8 +192,9 @@ See [Security](./SECURITY.md) for normative security detail. Architecture summar
 
 ### Authentication
 
-- Authenticate **user identity** once (shared across portals).
-- Establish session (cookie-based **Proposed** for web).
+- Authenticate **user identity** once (shared across portals) via **Better Auth**.
+- Establish **cookie-based sessions** persisted in **PostgreSQL**.
+- **Platform staff:** **TOTP** MFA; **step-up** re-auth enforced on the **backend** for privileged actions ([Security](./SECURITY.md)).
 
 ### Context resolution (Decision required mechanism; Confirmed need)
 
@@ -219,7 +221,7 @@ Backend permission     →  actual allow/deny
 ## 9. Tenant isolation and cross-organization access
 
 - Every tenant-owned table includes owning `organization_id` (or equivalent).
-- Domain repositories require tenant predicates for default access.
+- Domain repositories require tenant predicates for default access (**application-level isolation for MVP**; RLS deferred).
 - Adapter credentials stored per organization connection, encrypted at rest ([Security](./SECURITY.md)).
 - FreightOS cross-org reads/writes go through relationship-aware policies (RFQ/claim/quote/booking)—see [Business Rules §14](./BUSINESS_RULES.md) and [Database](./DATABASE.md).
 - Platform staff access is a separate authorization mode with audit.
@@ -245,7 +247,7 @@ Use jobs for:
 
 ## 12. Object / file storage
 
-- S3-compatible bucket(s).
+- **Private S3** (S3-compatible) bucket(s).
 - Store only object keys + metadata in DB (DocsOS).
 - Access via short-lived signed URLs after authz check—never public buckets for private docs/labels.
 
@@ -329,14 +331,13 @@ ParcelOS OrderImportService
 - Amazon adapter must gate features on granted SP-API roles/permissions.
 - Core Order entity stores `provider`, `external_order_id`, raw snapshot **Proposed** for support/debug (PII-minimized).
 
-## 19. Deployment architecture (Proposed)
+## 19. Deployment architecture (Confirmed hosting; shape Proposed)
 
-**MVP:**
+**MVP (Confirmed platform):**
 
-- 1× API service
-- 1× worker service
-- 1× PostgreSQL
-- 1× S3-compatible bucket
+- **Render:** 1× API service + 1× worker service
+- **Managed PostgreSQL** (Render)
+- **Private S3** bucket
 - Optional Redis only if job stack requires it
 
 **Environments:** `local`, `staging`, `production`.
@@ -345,7 +346,7 @@ ParcelOS OrderImportService
 
 ## 20. Local development architecture (Proposed)
 
-- Docker Compose: PostgreSQL (+ MinIO for S3-compatible local storage).
+- Docker Compose: PostgreSQL (+ MinIO as local stand-in for **private S3**).
 - API + worker + web run on host or Compose—**Decision required** team preference.
 - `.env.example` for non-secret defaults (file not created in this documentation pass).
 - Seed script for demo org **Future consideration**.
@@ -390,21 +391,24 @@ ParcelOS OrderImportService
 | Org roles | Confirmed: `owner`, `admin`, `ops`, `viewer` |
 | Platform staff roles | Confirmed: `platform_admin`, `platform_ops`, `platform_support` |
 | Hybrid permission storage | Confirmed |
-| Staff MFA/step-up required | Confirmed; **implementation details Decision required** |
+| Staff MFA/step-up | **Confirmed:** Better Auth; staff **TOTP**; **backend-enforced step-up** |
 | International ParcelOS MVP | Confirmed: core workflow; verified integrations only |
 | Billing | Confirmed deferred from MVP; architecture billing-ready |
 | Notifications | Confirmed: basic abstraction + essential transactional |
 | Carrier + marketplace adapters | Confirmed |
-| PostgreSQL | Proposed (strong recommendation) |
+| PostgreSQL | **Confirmed** (managed, with Render) |
+| **NestJS + Fastify** | **Confirmed** |
+| **Prisma** | **Confirmed** |
+| **Auth** | **Confirmed:** Better Auth + PostgreSQL sessions |
+| **Hosting** | **Confirmed:** Render + managed PostgreSQL + private S3 |
+| **Tenant isolation (MVP)** | **Confirmed:** application-level; **RLS deferred** |
 | TypeScript + Next.js frontend | Proposed |
-| **NestJS vs Fastify** (or Python alt) | **Decision required** |
-| **ORM** (Prisma vs Drizzle, etc.) | **Decision required** |
 | PG jobs vs Redis/BullMQ | Proposed: PG jobs MVP |
 | Org / staff context resolution mechanism | Decision required |
-| **Hosting** | **Decision required** |
-| **PostgreSQL RLS** | **Decision required** |
-| **MFA implementation details** | **Decision required** |
 | Subdomains later | Future consideration |
-| Split Admin/Ops apps later | Future consideration |---
+| Split Admin/Ops apps later | Future consideration |
+| PostgreSQL RLS (post-MVP) | Future consideration |
 
-*When architecture decisions are approved, update this file and align Database + Security docs. Do not invent provider API capabilities in adapters.*
+---
+
+*Do not invent provider API capabilities in adapters. Align Database + Security when stack decisions change.*

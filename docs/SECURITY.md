@@ -26,38 +26,37 @@
 
 ## 2. Authentication
 
-### 2.1 User authentication (Proposed)
+### 2.1 User authentication (Confirmed library; details as noted)
 
-- Email + password for MVP web app.
-- Passwords hashed with **Argon2id** (preferred) or bcrypt.
-- Sessions for browser clients: **HTTP-only, Secure, SameSite** cookies.
+- **Better Auth** for identity (email + password for MVP web app).
+- Passwords hashed with **Argon2id** (preferred) or bcrypt (library default as applicable).
+- Sessions for browser clients: **HTTP-only, Secure, SameSite** cookies; session records in **PostgreSQL**.
 - CSRF protection for cookie-based session mutations (**Confirmed need** if cookie auth).
 - Optional API bearer tokens for integration clients—**Future consideration** / **Decision required** timing.
 - Email verification before sensitive actions—**Proposed**.
 - Password reset via time-limited single-use tokens—**Proposed**.
 - **One identity** across Customer, Forwarder, Ops, and Admin portals—no per-portal user accounts.
 
-### 2.2 Session / token handling (Proposed)
+### 2.2 Session / token handling (Confirmed store; TTL Decision required)
 
 | Control | Rule |
 |---------|------|
 | Session TTL | Absolute + idle timeouts (**Decision required** exact values) |
 | Rotation | Rotate session id on login |
 | Revocation | Membership revoke / password change / staff privilege revoke invalidates sessions **Proposed** |
-| Storage | Server-side session store or signed session with revocation list—**Decision required** |
-| JWT | If used, short-lived access + refresh rotation; prefer not storing long-lived JWT in localStorage |
+| Storage | **PostgreSQL sessions** via **Better Auth** (**Confirmed**) |
+| JWT | Prefer server-side sessions for web; if tokens used later, short-lived access + refresh rotation; prefer not storing long-lived JWT in localStorage |
 | Portal hint | May store last portal / active org as UX preference only—**never** sole authz input |
 
-### 2.3 MFA and step-up (Confirmed requirement; implementation Decision required)
+### 2.3 MFA and step-up (Confirmed)
 
-- **Platform staff:** MFA and/or **step-up authentication** is **required** for privileged actions (Admin Portal sensitive operations and other privileged staff actions as defined in permission policy).
-- **MFA implementation details** (provider, factors, step-up triggers, recovery) remain **Decision required** until the technical architecture phase.
+- **Platform staff:** **TOTP** MFA is **required**; **step-up authentication is enforced on the backend** for privileged actions (Admin Portal sensitive operations and other privileged staff actions as defined in permission policy)—not frontend-only gates.
 - Org-owner MFA for customer accounts remains **Future consideration** / optional later unless elevated risk demands earlier.
 
 ### 2.4 Platform admin / employee authentication
 
-- Staff use the same identity system with a **separate platform staff membership model** ([Database](./DATABASE.md)).
-- Admin Portal and privileged staff actions must be strongly gated (staff role + **MFA/step-up**).
+- Staff use the same identity system (**Better Auth**) with a **separate platform staff membership model** ([Database](./DATABASE.md)).
+- Admin Portal and privileged staff actions must be strongly gated (staff role + **TOTP** + **backend-enforced step-up**).
 - Additional controls (IP allowlist, etc.) remain **Proposed** / **Decision required**.
 - Break-glass production infrastructure access remains separate from app Admin Portal ([§18](#18-production-access-controls-confirmed-intent)).
 
@@ -127,7 +126,7 @@ Thin Admin MVP includes ([BR-R12](./BUSINESS_RULES.md)):
 
 **Out of initial Admin MVP:** advanced analytics, billing administration, complex operational tooling.
 
-Admin privileges are distinct from customer-org roles. Strongly protect Admin Portal: authn hardening + MFA/step-up for privileged actions (**implementation Decision required**) + permission checks + audit.
+Admin privileges are distinct from customer-org roles. Strongly protect Admin Portal: authn hardening + staff **TOTP** + **backend-enforced step-up** for privileged actions + permission checks + audit.
 
 ### 3.7 Cross-organization FreightOS access (Confirmed)
 
@@ -151,10 +150,10 @@ See [Business Rules §14](./BUSINESS_RULES.md).
 - Repositories/services require ownership predicates for default access; “get by id” alone is insufficient.
 - Automated tests for cross-tenant IDOR and cross-portal privilege escalation.
 
-### 4.2 Defense in depth (**Decision required**)
+### 4.2 Defense in depth (RLS deferred)
 
-- PostgreSQL **Row Level Security (RLS)** remains **Decision required** for the technical architecture phase (including any staff bypass design).
-- Until decided, application-layer isolation and tests are mandatory.
+- **MVP:** application-layer isolation and automated cross-tenant tests are **mandatory** and sufficient for launch ([Architecture](./ARCHITECTURE.md)).
+- **PostgreSQL Row Level Security (RLS)** is **deferred** (not MVP). Revisit later as defense-in-depth, including any staff bypass design.
 
 ### 4.3 Worker / job isolation (Confirmed)
 
@@ -211,9 +210,9 @@ Portal path or `X-Portal` header may be recorded for audit/telemetry—**must no
 | Data | Requirement |
 |------|-------------|
 | In transit | TLS 1.2+ for all public endpoints (**Confirmed**) |
-| At rest (DB/disks) | Rely on managed Postgres/disk encryption where available (**Proposed**) |
+| At rest (DB/disks) | Rely on managed Postgres/disk encryption where available (**Proposed**; Render managed PostgreSQL) |
 | Integration secrets | Field-level encryption before DB store (**Proposed**) |
-| Files in object storage | SSE (S3/R2 default) + private buckets (**Confirmed** intent) |
+| Files in object storage | SSE + **private S3** buckets (**Confirmed**) |
 | Backups | Encrypted backups (**Proposed**) |
 
 Application-level encryption of all PII columns is **Future consideration** unless regulation demands earlier.
@@ -345,7 +344,7 @@ Do not claim PCI compliance until validated.
 
 | Threat | Primary controls |
 |--------|------------------|
-| Cross-tenant data leak | Tenant predicates, RBAC, tests, optional RLS |
+| Cross-tenant data leak | Tenant predicates, RBAC, tests; RLS deferred post-MVP |
 | Portal URL privilege escalation | Server-side authz; portal is UX only |
 | Insider / employee overreach | Explicit staff permissions; audit; no auto full access |
 | Admin misuse | Strong admin gating; audit; separate from customer roles |
@@ -381,11 +380,10 @@ Do not claim PCI compliance until validated.
 
 | Topic | Status |
 |-------|--------|
-| Exact auth library / session store | Decision required |
+| Exact session TTL / idle values | Decision required |
 | Org-owner MFA timing | Future consideration |
-| **MFA implementation details** | **Decision required** (requirement Confirmed) |
 | Admin IP allowlist | Proposed / Decision required |
-| **PostgreSQL RLS** (incl. staff bypass design) | **Decision required** |
+| PostgreSQL RLS (incl. staff bypass design) | **Deferred** (post-MVP) |
 | Password policy specifics | Decision required |
 | API keys for third parties | Decision required |
 | Bot protection vendor | Decision required |
@@ -393,10 +391,14 @@ Do not claim PCI compliance until validated.
 | Secret manager vendor | Decision required |
 | Case-scoped support access model | Future consideration / Decision required |
 
-### Founder-confirmed (cumulative)
+### Confirmed (Astra / founder cumulative)
 
 | Topic | Decision |
 |-------|----------|
+| Auth library / sessions | **Better Auth** + **PostgreSQL sessions** |
+| Staff MFA / step-up | Staff **TOTP**; **backend-enforced step-up** for privileged actions |
+| Tenant isolation (MVP) | Application-level; **RLS deferred** |
+| Hosting / data plane | Render + managed PostgreSQL + private S3 ([Architecture](./ARCHITECTURE.md)) |
 | Role catalogs | Org: `owner`/`admin`/`ops`/`viewer`; Staff: `platform_admin`/`platform_ops`/`platform_support` |
 | Permission storage | Hybrid: DB assignments, code definitions |
 | Portal sequencing | Customer + thin Admin → Ops later → Forwarder with FreightOS |
@@ -404,12 +406,14 @@ Do not claim PCI compliance until validated.
 | Routing | Path prefixes initially |
 | Web architecture | Single web app initially |
 | Organization type | `exporter`, `forwarder`, `both` |
-| Platform staff | Separate staff membership + MFA/step-up (impl details Decision required) |
+| Platform staff | Separate staff membership + TOTP + backend step-up |
 | RFQ discovery | Eligible marketplace visibility with controlled eligibility |
 | Privileged reads | BR-A3 allowlist; not ordinary list/detail reads |
 | Cross-org documents | Explicit resource-based access, default deny |
 | International MVP | Core workflow; verified integrations only |
 | Billing | Deferred from initial MVP; architecture billing-ready |
-| Notifications | Basic abstraction + essential transactional only |---
+| Notifications | Basic abstraction + essential transactional only |
+
+---
 
 *Security-relevant product changes must update this document alongside Business Rules and Architecture.*
